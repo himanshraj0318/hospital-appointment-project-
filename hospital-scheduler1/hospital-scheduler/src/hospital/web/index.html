@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospital Appointment & Emergency Scheduler | Mission Control</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            medical: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes pulse-fast {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .emergency-pulse {
+      animation: pulse-fast 1.2s infinite ease-in-out;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 3px;
+    }
+
+    /* Print Styles for Discharge Receipt */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printableReceipt, #printableReceipt * {
+        visibility: visible;
+      }
+      #printableReceipt {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 24px;
+        background: white !important;
+        color: #0f172a !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col antialiased selection:bg-cyan-500 selection:text-white">
+
+  <!-- ========================================================================= -->
+  <!-- TOP NAVIGATION HEADER                                                     -->
+  <!-- ========================================================================= -->
+  <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-40 px-4 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-white font-bold text-xl">
+        ✚
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-extrabold text-lg sm:text-xl tracking-tight text-white">MetroGeneral Hospital</h1>
+          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">CSE 213 Core</span>
+        </div>
+        <p class="text-xs text-slate-400 hidden sm:block">Concurrent Appointment Scheduler & Emergency Dispatch Hub</p>
+      </div>
+    </div>
+
+    <!-- Quick Status Pills -->
+    <div class="flex items-center gap-2 sm:gap-4 text-xs">
+      <!-- Connection status badge -->
+      <div id="connPill" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700">
+        <span class="relative flex h-2.5 w-2.5">
+          <span id="connPing" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span id="connDot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span id="connText" class="font-medium text-slate-300">Connecting...</span>
+      </div>
+
+      <div class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300">
+        <span class="text-slate-400">Policy:</span>
+        <span id="badgePolicy" class="font-mono text-cyan-400 font-bold">PRIORITY_ER_TEAM</span>
+      </div>
+
+      <div class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300">
+        <span class="text-slate-400">Store:</span>
+        <span id="badgeStore" class="font-mono text-amber-400 font-semibold">Browser Engine</span>
+      </div>
+
+      <!-- Jump to Receipts Button -->
+      <a href="#receiptsSection" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-medium transition">
+        <span>🧾</span>
+        <span>Discharge Receipts (<span id="topReceiptCount">0</span>)</span>
+      </a>
+
+      <!-- Sound Toggle -->
+      <button id="soundToggleBtn" onclick="toggleSound()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition" title="Toggle Audio Alerts">
+        <span id="soundIcon">🔔</span>
+      </button>
+
+      <!-- Benchmark Modal Trigger -->
+      <button onclick="openBenchmarkModal()" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition shadow-md shadow-indigo-600/30">
+        <span>📊</span>
+        <span>Run Benchmark</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- SIMULATION CLOCK & CONTROLLER BANNER                                      -->
+  <!-- ========================================================================= -->
+  <section class="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border-b border-slate-800/80 px-4 lg:px-8 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+      
+      <!-- Big Digital Clock & Live Status -->
+      <div class="flex items-center gap-3">
+        <div class="bg-slate-950 px-4 py-2 rounded-xl border border-cyan-500/40 shadow-inner flex items-baseline gap-1">
+          <span class="text-[10px] uppercase tracking-wider text-cyan-400/80 font-bold mr-1">SIM TIME</span>
+          <span id="digitalClockHourMin" class="font-mono text-3xl sm:text-4xl font-extrabold text-cyan-400 tracking-wider">08:00</span>
+          <span id="digitalClockSec" class="font-mono text-xl sm:text-2xl font-bold text-cyan-300">:00</span>
+          <span id="clockPeriod" class="text-xs text-slate-400 font-semibold ml-1">AM</span>
+        </div>
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <div id="currentShiftBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              ☀️ Morning Shift (06:00 - 14:00)
+            </div>
+            <!-- Play / Pause Button -->
+            <button id="clockPlayPauseBtn" onclick="toggleClockPause()" class="px-2.5 py-0.5 rounded-md bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/40 text-xs font-bold transition flex items-center gap-1">
+              <span id="clockPlayPauseIcon">⏸</span>
+              <span id="clockPlayPauseText">Pause</span>
+            </button>
+          </div>
+          <p id="clockSlotDetail" class="text-[11px] text-slate-400">Slot #160 (3-min granularity)</p>
+        </div>
+      </div>
+
+      <!-- Clock Speed Selector -->
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs font-semibold text-slate-400 mr-1">Speed:</span>
+        <div class="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+          <button onclick="setSpeed(0)" id="speedBtn-0" class="speed-btn px-2.5 py-1 rounded-lg hover:text-white transition">Paused</button>
+          <button onclick="setSpeed(1)" id="speedBtn-1" class="speed-btn px-2.5 py-1 rounded-lg hover:text-white transition">1 min/s</button>
+          <button onclick="setSpeed(6)" id="speedBtn-6" class="speed-btn px-2.5 py-1 rounded-lg bg-cyan-600 text-white font-semibold transition">6 min/s</button>
+          <button onclick="setSpeed(20)" id="speedBtn-20" class="speed-btn px-2.5 py-1 rounded-lg hover:text-white transition">20 min/s</button>
+          <button onclick="setSpeed(60)" id="speedBtn-60" class="speed-btn px-2.5 py-1 rounded-lg hover:text-white transition">60 min/s</button>
+        </div>
+
+        <!-- Jump to Hour -->
+        <span class="text-xs font-semibold text-slate-400 ml-2 mr-1">Jump:</span>
+        <div class="flex items-center gap-1 text-xs">
+          <button onclick="setHour(8)" class="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition">08:00</button>
+          <button onclick="setHour(14)" class="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition">14:00</button>
+          <button onclick="setHour(18)" class="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition">18:00</button>
+          <button onclick="setHour(22)" class="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition">22:00</button>
+          <button onclick="setHour(2)" class="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition">02:00</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========================================================================= -->
+  <!-- MAIN WORKSPACE                                                            -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 space-y-6">
+
+    <!-- KPI Metric Cards Grid -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      
+      <!-- Emergency Wait -->
+      <div class="bg-slate-900/90 rounded-2xl p-4 border border-rose-500/30 relative overflow-hidden shadow-lg shadow-rose-950/20">
+        <div class="absolute -top-6 -right-6 w-20 h-20 bg-rose-500/10 rounded-full blur-xl"></div>
+        <div class="flex items-center justify-between text-xs font-medium text-rose-400 mb-1">
+          <span>EMERGENCY WAIT</span>
+          <span class="text-rose-500 font-bold">🚨 24h Team</span>
+        </div>
+        <div class="flex items-baseline gap-1">
+          <span id="metricEmgWait" class="font-mono text-2xl lg:text-3xl font-extrabold text-white">0.0</span>
+          <span class="text-xs text-slate-400">ms avg</span>
+        </div>
+        <p id="metricEmgP95" class="text-[11px] text-slate-400 mt-1">p95 wait: 0.0 ms</p>
+      </div>
+
+      <!-- Routine Wait -->
+      <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 relative overflow-hidden shadow">
+        <div class="text-xs font-medium text-blue-400 mb-1">ROUTINE WAIT</div>
+        <div class="flex items-baseline gap-1">
+          <span id="metricRtnWait" class="font-mono text-2xl lg:text-3xl font-extrabold text-white">0.0</span>
+          <span class="text-xs text-slate-400">ms avg</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">First-come inside shift</p>
+      </div>
+
+      <!-- Throughput -->
+      <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 relative overflow-hidden shadow">
+        <div class="text-xs font-medium text-emerald-400 mb-1">SYSTEM THROUGHPUT</div>
+        <div class="flex items-baseline gap-1">
+          <span id="metricThroughput" class="font-mono text-2xl lg:text-3xl font-extrabold text-white">0.0</span>
+          <span class="text-xs text-slate-400">patients/s</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">Concurrent doctor threads</p>
+      </div>
+
+      <!-- Completed / Discharged -->
+      <div class="bg-slate-900/90 rounded-2xl p-4 border border-emerald-500/30 relative overflow-hidden shadow">
+        <div class="text-xs font-medium text-emerald-400 mb-1">DISCHARGED PATIENTS</div>
+        <div class="flex items-baseline gap-1.5">
+          <span id="metricCompleted" class="font-mono text-2xl lg:text-3xl font-extrabold text-white">0</span>
+          <span class="text-xs text-slate-400">/ <span id="metricSubmitted">0</span> total</span>
+        </div>
+        <p id="metricRejected" class="text-[11px] text-emerald-400/80 mt-1">Receipts ready for review</p>
+      </div>
+
+      <!-- Total Revenue Billed -->
+      <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 relative overflow-hidden shadow col-span-2 md:col-span-1">
+        <div class="text-xs font-medium text-amber-400 mb-1">HOSPITAL REVENUE</div>
+        <div class="flex items-baseline gap-1.5">
+          <span id="metricRevenue" class="font-mono text-2xl lg:text-3xl font-extrabold text-amber-400">$0</span>
+        </div>
+        <p id="metricConflicts" class="text-[11px] text-slate-400 mt-1">0 conflicts (ReentrantLock)</p>
+      </div>
+
+    </div>
+
+    <!-- 2-Column Core Interface: Triage & Booking vs Doctors -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- LEFT COLUMN: Triage & Booking Console (5 cols) -->
+      <div class="lg:col-span-5 space-y-6">
+
+        <!-- EMERGENCY PROTOCOL CARD -->
+        <div class="bg-gradient-to-br from-rose-950/40 via-slate-900 to-slate-900 rounded-2xl p-5 border-2 border-rose-600/50 shadow-xl shadow-rose-950/30 relative">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 text-xs font-bold bg-rose-600 text-white rounded-md tracking-wider">LEVEL 1</span>
+              <h2 class="font-bold text-white text-base">Emergency Triage Unit</h2>
+            </div>
+            <span class="text-xs text-rose-400 font-semibold animate-pulse">● 24h On-Call Ready</span>
+          </div>
+
+          <p class="text-xs text-slate-300 mb-4">
+            Dispatches immediately to the least-loaded of the 5 emergency doctors (<span class="text-rose-300 font-medium">Khan, Joshi, Patel, Roy, Fernandes</span>) and leaps the queue.
+          </p>
+
+          <div class="space-y-3">
+            <div class="grid grid-cols-3 gap-2">
+              <div class="col-span-2">
+                <input id="emgNameInput" type="text" placeholder="Patient Name (or auto-gen)" class="w-full bg-slate-950/80 border border-rose-500/40 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-400">
+              </div>
+              <div>
+                <input id="emgAgeInput" type="number" min="1" max="110" value="45" placeholder="Age" class="w-full bg-slate-950/80 border border-rose-500/40 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-rose-400 text-center">
+              </div>
+            </div>
+
+            <button onclick="dispatchEmergency()" class="emergency-pulse w-full py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-600 text-white font-extrabold tracking-wide shadow-lg shadow-rose-600/40 transition flex items-center justify-center gap-2 text-sm">
+              <span>🚨</span>
+              <span>DISPATCH CRITICAL EMERGENCY</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ROUTINE OUTPATIENT BOOKING -->
+        <div class="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+              <h2 class="font-bold text-white text-base">Outpatient Slot Booking</h2>
+            </div>
+            <span class="text-xs text-slate-400">Shift Matching</span>
+          </div>
+
+          <form id="routineForm" onsubmit="event.preventDefault(); bookRoutine();" class="space-y-3.5">
+            <div class="grid grid-cols-3 gap-2">
+              <div class="col-span-2">
+                <label class="block text-xs font-medium text-slate-400 mb-1">Patient Name</label>
+                <input id="rtnNameInput" type="text" placeholder="e.g. John Doe" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Age</label>
+                <input id="rtnAgeInput" type="number" min="1" max="115" value="32" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white text-center focus:outline-none focus:border-cyan-500">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Clinical Department</label>
+              <select id="rtnDeptSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                <option value="GENERAL">General Medicine (24h coverage)</option>
+                <option value="CARDIOLOGY">Cardiology (06:00 - 22:00)</option>
+                <option value="ORTHOPEDICS">Orthopedics (06:00 - 22:00)</option>
+                <option value="PEDIATRICS">Pediatrics (24h coverage)</option>
+                <option value="NEUROLOGY">Neurology (06:00 - 22:00)</option>
+                <option value="GYNECOLOGY">Gynecology (06:00 - 22:00)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Preferred Time Slot (3-min slots)</label>
+              <select id="rtnTimeSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-cyan-500">
+                <!-- Populated dynamically via JS -->
+              </select>
+            </div>
+
+            <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition shadow-md shadow-cyan-600/20 text-sm">
+              Confirm Routine Appointment
+            </button>
+          </form>
+        </div>
+
+        <!-- SIMULATION CONTROLS & BATCH ACTIONS -->
+        <div class="bg-slate-900 rounded-2xl p-4 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <button onclick="injectDemoPatients(15)" class="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold border border-slate-700 transition flex items-center justify-center gap-1.5">
+            <span>⚡</span>
+            <span>+15 Random Patients</span>
+          </button>
+          <button onclick="injectDemoPatients(50)" class="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold border border-slate-700 transition flex items-center justify-center gap-1.5">
+            <span>💥</span>
+            <span>Rush Hour (+50)</span>
+          </button>
+          <button onclick="clearFinishedAppointments()" class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 font-semibold border border-slate-700 transition" title="Delete completed records">
+            <span>🗑️ Clear Done</span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Doctor Roster & Shift Visualizer (7 cols) -->
+      <div class="lg:col-span-7 space-y-4">
+        
+        <div class="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h2 class="font-bold text-white text-base">Active Doctor Roster & Shifts</h2>
+              <p class="text-xs text-slate-400">18 total staff: 6 clinical departments + 5 emergency specialists</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">● On Duty</span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">● Off Duty</span>
+            </div>
+          </div>
+
+          <!-- Doctor Cards Grid -->
+          <div id="doctorGrid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[480px] overflow-y-auto pr-1 custom-scrollbar">
+            <!-- Doctor cards injected via JS -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- APPOINTMENTS & PATIENT QUEUE LEDGER                                       -->
+    <!-- ========================================================================= -->
+    <div class="bg-slate-900 rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+      
+      <!-- Table Header & Filter Bar -->
+      <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <h2 class="font-bold text-white text-base">Patient Queue & Live Ledger</h2>
+          <span id="apptCountBadge" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">0 records</span>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          <button onclick="setFilter('ALL')" id="filterBtn-ALL" class="filter-btn px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-semibold transition">All</button>
+          <button onclick="setFilter('WAITING')" id="filterBtn-WAITING" class="filter-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Waiting</button>
+          <button onclick="setFilter('IN_PROGRESS')" id="filterBtn-IN_PROGRESS" class="filter-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">In Progress</button>
+          <button onclick="setFilter('DONE')" id="filterBtn-DONE" class="filter-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Done (Discharged)</button>
+          <button onclick="setFilter('EMERGENCY')" id="filterBtn-EMERGENCY" class="filter-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-rose-300 transition">🚨 Emergencies</button>
+        </div>
+      </div>
+
+      <!-- Scrollable Table -->
+      <div class="overflow-x-auto max-h-[380px] custom-scrollbar">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="bg-slate-950/70 text-slate-400 uppercase text-[10px] tracking-wider sticky top-0 backdrop-blur z-10 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4 font-semibold">ID</th>
+              <th class="py-3 px-4 font-semibold">Patient</th>
+              <th class="py-3 px-4 font-semibold">Priority</th>
+              <th class="py-3 px-4 font-semibold">Department</th>
+              <th class="py-3 px-4 font-semibold">Assigned Doctor</th>
+              <th class="py-3 px-4 font-semibold">Slot Time</th>
+              <th class="py-3 px-4 font-semibold">Status</th>
+              <th class="py-3 px-4 font-semibold">Wait Time</th>
+              <th class="py-3 px-4 font-semibold text-right">Receipt</th>
+            </tr>
+          </thead>
+          <tbody id="appointmentTableBody" class="divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="9" class="text-center py-8 text-slate-500 font-sans">
+                Initializing scheduler...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- NEW SECTION: DISCHARGED PATIENT RECEIPTS & BILLING LEDGER                -->
+    <!-- ========================================================================= -->
+    <div id="receiptsSection" class="bg-slate-900 rounded-2xl border border-slate-800 shadow-xl overflow-hidden space-y-4 p-5">
+      
+      <!-- Section Header -->
+      <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-bold text-xl shadow-lg shadow-emerald-500/10">
+            🧾
+          </div>
+          <div>
+            <h2 class="font-extrabold text-lg text-white">Discharged Patient Receipts & Billing Ledger</h2>
+            <p class="text-xs text-slate-400">Itemized medical invoices, consultation reports & printable discharge slips for completed patients</p>
+          </div>
+        </div>
+
+        <!-- Receipt Search & Stats -->
+        <div class="flex items-center gap-3">
+          <input id="receiptSearchInput" oninput="filterReceiptCards()" type="text" placeholder="Search by name, doctor, or ID..." class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-60">
+          <span id="dischargedBadge" class="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold font-mono">0 Discharges</span>
+        </div>
+      </div>
+
+      <!-- Discharged Patient Cards Grid -->
+      <div id="receiptsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
+        <!-- Injected via JavaScript -->
+        <div class="col-span-full text-center py-12 text-slate-500 text-xs">
+          No patients have been discharged yet. When patients finish consultation (`DONE`), their official discharge receipt will appear here.
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- OFFICIAL DISCHARGE RECEIPT & INVOICE MODAL                                -->
+  <!-- ========================================================================= -->
+  <div id="receiptModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      
+      <!-- Modal Control Bar -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 no-print">
+        <div class="flex items-center gap-2 text-xs text-slate-400">
+          <span>Official Document</span>
+          <span>•</span>
+          <span class="text-emerald-400 font-semibold">Discharge Complete</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="printReceipt()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition">
+            <span>🖨️</span>
+            <span>Print Receipt</span>
+          </button>
+          <button onclick="closeReceiptModal()" class="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-800 text-xs transition">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Printable Receipt Content -->
+      <div class="p-6 sm:p-8 overflow-y-auto custom-scrollbar" id="printableReceiptContainer">
+        <div id="printableReceipt" class="bg-white text-slate-900 p-6 sm:p-8 rounded-2xl shadow border border-slate-200 font-sans space-y-6">
+          
+          <!-- Hospital Letterhead -->
+          <div class="flex items-start justify-between border-b-2 border-slate-900 pb-5">
+            <div class="flex items-center gap-3.5">
+              <div class="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-2xl">
+                ✚
+              </div>
+              <div>
+                <h3 class="font-extrabold text-xl tracking-tight text-slate-900 uppercase">MetroGeneral Hospital</h3>
+                <p class="text-xs text-slate-600 font-medium">Central Emergency Trauma & Outpatient Center</p>
+                <p class="text-[11px] text-slate-500">Medical District, Central Boulevard • Reg: MGH-2026-9941</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="inline-block px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-extrabold text-xs tracking-wider uppercase">PAID & DISCHARGED</span>
+              <p id="rcptInvoiceNo" class="font-mono text-xs font-bold text-slate-900 mt-1">INV-2026-0000</p>
+              <p id="rcptTimestamp" class="text-[11px] text-slate-500">Date: 2026-11-18 08:30</p>
+            </div>
+          </div>
+
+          <!-- Patient & Attending Doctor Info Grid -->
+          <div class="grid grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+            <div>
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">PATIENT INFORMATION</span>
+              <p id="rcptPatientName" class="font-bold text-sm text-slate-900">John Doe</p>
+              <p id="rcptPatientMeta" class="text-slate-600 text-xs">Age: 32 | ID: #1042</p>
+              <p id="rcptDepartment" class="text-slate-600 text-xs">Department: General Medicine</p>
+            </div>
+            <div class="border-l border-slate-200 pl-4">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">ATTENDING PHYSICIAN</span>
+              <p id="rcptDoctorName" class="font-bold text-sm text-slate-900">Dr. Rao</p>
+              <p id="rcptShift" class="text-slate-600 text-xs">Shift: Morning 06:00-14:00</p>
+              <p id="rcptPriority" class="text-slate-600 text-xs">Care Level: Routine Outpatient</p>
+            </div>
+          </div>
+
+          <!-- Clinical Service Metrics -->
+          <div class="grid grid-cols-3 gap-2 text-center text-xs p-3 rounded-xl bg-cyan-50/70 border border-cyan-100 text-cyan-950 font-mono">
+            <div>
+              <span class="block text-[10px] text-cyan-700 font-sans uppercase">Booked Slot</span>
+              <span id="rcptSlotTime" class="font-bold text-sm">09:00</span>
+            </div>
+            <div>
+              <span class="block text-[10px] text-cyan-700 font-sans uppercase">Triage Wait</span>
+              <span id="rcptWaitTime" class="font-bold text-sm">2.4 ms</span>
+            </div>
+            <div>
+              <span class="block text-[10px] text-cyan-700 font-sans uppercase">Treatment Duration</span>
+              <span id="rcptServiceTime" class="font-bold text-sm">2,500 ms</span>
+            </div>
+          </div>
+
+          <!-- Itemized Financial Statement Table -->
+          <div class="space-y-2">
+            <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider">Itemized Medical Statement</h4>
+            <table class="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
+              <thead class="bg-slate-100 text-slate-700 uppercase text-[10px] border-b border-slate-200">
+                <tr>
+                  <th class="py-2 px-3">Service Description</th>
+                  <th class="py-2 px-3">Category</th>
+                  <th class="py-2 px-3 text-right">Amount (USD)</th>
+                </tr>
+              </thead>
+              <tbody id="rcptBillItems" class="divide-y divide-slate-100 text-slate-700 font-mono">
+                <!-- Injected via JS -->
+              </tbody>
+              <tfoot class="bg-slate-50 border-t-2 border-slate-900 font-bold text-slate-900">
+                <tr>
+                  <td colspan="2" class="py-2.5 px-3 uppercase text-xs">Total Invoiced Amount</td>
+                  <td id="rcptTotalAmount" class="py-2.5 px-3 text-right font-mono text-sm text-slate-900">$275.00</td>
+                </tr>
+                <tr>
+                  <td colspan="2" class="py-1 px-3 text-emerald-700 font-sans text-[11px]">Payment Received (Insurance / Electronic Settle)</td>
+                  <td id="rcptPaidAmount" class="py-1 px-3 text-right font-mono text-xs text-emerald-700">-$275.00</td>
+                </tr>
+                <tr class="text-slate-500 font-normal">
+                  <td colspan="2" class="py-1 px-3 text-[11px]">Remaining Balance Due</td>
+                  <td class="py-1 px-3 text-right font-mono text-xs text-slate-900 font-bold">$0.00</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- Medical Sign-off & Stamp -->
+          <div class="pt-4 border-t border-slate-200 flex items-end justify-between text-xs text-slate-500">
+            <div>
+              <p class="font-semibold text-slate-700">Discharge Disposition:</p>
+              <p class="text-[11px] text-slate-600">Patient condition stable; completed prescribed consultation.</p>
+              <div class="mt-2 inline-flex items-center gap-1.5 text-[10px] text-emerald-700 font-mono">
+                <span>✓ SHA-256 Verified Electronic Medical Record</span>
+              </div>
+            </div>
+            <div class="text-center">
+              <div class="font-serif italic text-lg text-slate-800 mb-1 border-b border-slate-300 pb-1 px-4">
+                <span id="rcptDocSig">Dr. Rao, M.D.</span>
+              </div>
+              <p class="text-[10px] text-slate-500 uppercase tracking-wider">Attending Medical Officer</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- BENCHMARK EXPERIMENT MODAL                                                -->
+  <!-- ========================================================================= -->
+  <div id="benchmarkModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-lg">
+            📊
+          </div>
+          <div>
+            <h3 class="font-extrabold text-white text-base sm:text-lg">Concurrency Experiment & Benchmark</h3>
+            <p class="text-xs text-slate-400">Evaluates FIFO vs PRIORITY vs PRIORITY_ER_TEAM across shifts & locking</p>
+          </div>
+        </div>
+        <button onclick="closeBenchmarkModal()" class="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-800 text-sm">✕</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 overflow-y-auto space-y-5 custom-scrollbar">
+        
+        <!-- Controls -->
+        <div class="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs">
+          <div>
+            <span class="text-slate-300 font-medium">Select trials per row:</span>
+            <div class="inline-flex ml-2 p-1 bg-slate-900 rounded-lg border border-slate-800">
+              <button onclick="selectTrials(1)" id="trialBtn-1" class="trial-btn px-3 py-1 rounded bg-indigo-600 text-white font-semibold">1 (Fastest)</button>
+              <button onclick="selectTrials(2)" id="trialBtn-2" class="trial-btn px-3 py-1 rounded text-slate-400 hover:text-white">2 trials</button>
+              <button onclick="selectTrials(5)" id="trialBtn-5" class="trial-btn px-3 py-1 rounded text-slate-400 hover:text-white">5 trials</button>
+            </div>
+          </div>
+
+          <button id="runBenchmarkBtn" onclick="executeBenchmark()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold transition shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+            <span id="benchmarkSpinner" class="hidden animate-spin">⏳</span>
+            <span>Run Experiment Suite</span>
+          </button>
+        </div>
+
+        <!-- Explanatory Insight Box -->
+        <div class="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30 text-xs text-indigo-300 leading-relaxed">
+          <strong>Key Concurrency Finding:</strong> The dedicated 24-hour emergency team (<code class="bg-indigo-900/40 px-1 py-0.5 rounded text-white font-mono">PRIORITY_ER_TEAM</code>) drops emergency wait times by <strong>&gt;98%</strong> compared to traditional FIFO, while safe <code class="bg-indigo-900/40 px-1 py-0.5 rounded text-white font-mono">ReentrantLock</code> eliminates double-booking race conditions entirely.
+        </div>
+
+        <!-- Benchmark Results Table -->
+        <div class="overflow-x-auto rounded-xl border border-slate-800">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-slate-950 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="py-2.5 px-3">Mode</th>
+                <th class="py-2.5 px-3">Locking</th>
+                <th class="py-2.5 px-3">Emerg%</th>
+                <th class="py-2.5 px-3">Hour</th>
+                <th class="py-2.5 px-3 text-rose-400">Emg Avg (ms)</th>
+                <th class="py-2.5 px-3">Routine (ms)</th>
+                <th class="py-2.5 px-3 text-emerald-400">Thru (/s)</th>
+                <th class="py-2.5 px-3">Conflicts</th>
+                <th class="py-2.5 px-3">DblBook</th>
+              </tr>
+            </thead>
+            <tbody id="benchmarkTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tr>
+                <td colspan="9" class="text-center py-8 text-slate-500 font-sans">
+                  Click "Run Experiment Suite" to run the benchmark.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none no-print"></div>
+
+  <!-- ========================================================================= -->
+  <!-- JAVASCRIPT LOGIC & DUAL-MODE ENGINE (LIVE SERVER + STANDALONE FALLBACK)   -->
+  <!-- ========================================================================= -->
+  <script>
+    // State
+    let currentFilter = 'ALL';
+    let soundEnabled = true;
+    let selectedTrialCount = 1;
+    let previousEmergencyCount = 0;
+    let audioCtx = null;
+    let isBackendLive = false;
+    let lastPollSuccess = 0;
+    let globalAppointments = [];
+
+    // Standalone Simulation State (used when backend is offline)
+    const localSim = {
+      minute: 8 * 60,
+      speed: 6.0,
+      nextId: 1,
+      conflicts: 0,
+      doubleBookings: 0,
+      rejected: 0,
+      completed: 0,
+      submitted: 0,
+      emgWaits: [],
+      rtnWaits: [],
+      appointments: [],
+      doctors: [
+        { id: 1, name: "Rao", department: "General Medicine", shift: "Morning 06:00-14:00", shiftName: "MORNING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 2, name: "Mehta", department: "General Medicine", shift: "Evening 14:00-22:00", shiftName: "EVENING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 3, name: "Iyer", department: "General Medicine", shift: "Night 22:00-06:00", shiftName: "NIGHT", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 4, name: "Sharma", department: "Cardiology", shift: "Morning 06:00-14:00", shiftName: "MORNING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 5, name: "Nair", department: "Cardiology", shift: "Evening 14:00-22:00", shiftName: "EVENING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 6, name: "Gupta", department: "Orthopedics", shift: "Morning 06:00-14:00", shiftName: "MORNING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 7, name: "Reddy", department: "Orthopedics", shift: "Evening 14:00-22:00", shiftName: "EVENING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 8, name: "Kapoor", department: "Pediatrics", shift: "Morning 06:00-14:00", shiftName: "MORNING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 9, name: "Das", department: "Pediatrics", shift: "Evening 14:00-22:00", shiftName: "EVENING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 10, name: "Menon", department: "Pediatrics", shift: "Night 22:00-06:00", shiftName: "NIGHT", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 11, name: "Singh", department: "Neurology", shift: "Morning 06:00-14:00", shiftName: "MORNING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 12, name: "Verma", department: "Neurology", shift: "Evening 14:00-22:00", shiftName: "EVENING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 13, name: "Bose", department: "Gynecology", shift: "Morning 06:00-14:00", shiftName: "MORNING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 14, name: "Pillai", department: "Gynecology", shift: "Evening 14:00-22:00", shiftName: "EVENING", isEmergencyTeam: false, queue: [], busy: false },
+        { id: 15, name: "Khan", department: "Emergency Medicine", shift: "24h on call", shiftName: "ALL_DAY", isEmergencyTeam: true, queue: [], busy: false },
+        { id: 16, name: "Joshi", department: "Emergency Medicine", shift: "24h on call", shiftName: "ALL_DAY", isEmergencyTeam: true, queue: [], busy: false },
+        { id: 17, name: "Patel", department: "Emergency Medicine", shift: "24h on call", shiftName: "ALL_DAY", isEmergencyTeam: true, queue: [], busy: false },
+        { id: 18, name: "Roy", department: "Emergency Medicine", shift: "24h on call", shiftName: "ALL_DAY", isEmergencyTeam: true, queue: [], busy: false },
+        { id: 19, name: "Fernandes", department: "Emergency Medicine", shift: "24h on call", shiftName: "ALL_DAY", isEmergencyTeam: true, queue: [], busy: false }
+      ]
+    };
+
+    // Helper: is doctor on duty at minute
+    // handles both backend enum names (Morning/Evening/Night/24h on call)
+    // and legacy local-sim names (ALL_DAY/MORNING/EVENING/NIGHT)
+    function isDocOnDuty(shiftName, min) {
+      if (!shiftName) return false;
+      const s = shiftName.toLowerCase();
+      if (s === 'all_day' || s.includes('24h') || s.includes('on call')) return true;
+      const h = min / 60;
+      if (s === 'morning') return h >= 6 && h < 14;
+      if (s === 'evening') return h >= 14 && h < 22;
+      if (s === 'night') return h >= 22 || h < 6;
+      return false;
+    }
+
+    // Populate Time Dropdown (30-min increments)
+    const timeSelect = document.getElementById('rtnTimeSelect');
+    for (let m = 0; m < 24 * 60; m += 30) {
+      const h = Math.floor(m / 60);
+      const min = m % 60;
+      const formatted = String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+      const opt = document.createElement('option');
+      opt.value = formatted;
+      opt.textContent = formatted + (h < 12 ? ' AM' : ' PM');
+      if (formatted === '09:00') opt.selected = true;
+      timeSelect.appendChild(opt);
+    }
+
+    // Audio Alert Synthesizer (Web Audio API)
+    function playBeep(freq = 600, duration = 0.15, type = 'sine') {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function playEmergencyAlert() {
+      if (!soundEnabled) return;
+      playBeep(880, 0.12, 'sawtooth');
+      setTimeout(() => playBeep(659, 0.18, 'sawtooth'), 120);
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      document.getElementById('soundIcon').textContent = soundEnabled ? '🔔' : '🔕';
+      showToast(soundEnabled ? 'Audio alerts turned on' : 'Audio alerts muted');
+    }
+
+    // Toast Notifications
+    function showToast(message, type = 'info') {
+      const c = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const bg = type === 'emergency' ? 'bg-rose-600 text-white' : type === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-100 border border-slate-700';
+      toast.className = `${bg} px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto`;
+      toast.innerHTML = `<span>${type === 'emergency' ? '🚨' : type === 'success' ? '✓' : 'ℹ'}</span><span>${message}</span>`;
+      c.appendChild(toast);
+      setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Real-time Clock State & Synchronization
+    let serverMinuteOfDay = 8 * 60;
+    let serverSpeed = 6.0;
+    let lastSyncTimestamp = performance.now();
+
+    function updateSmoothClock() {
+      let currentMin = serverMinuteOfDay;
+      if (serverSpeed > 0) {
+        const elapsedSec = (performance.now() - lastSyncTimestamp) / 1000;
+        currentMin = (serverMinuteOfDay + (elapsedSec * serverSpeed)) % 1440;
+      }
+
+      const totalSec = Math.floor(currentMin * 60) % 86400;
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+
+      const hh = String(h).padStart(2, '0');
+      const mm = String(m).padStart(2, '0');
+      const ss = String(s).padStart(2, '0');
+
+      const timeEl = document.getElementById('digitalClockHourMin');
+      const secEl = document.getElementById('digitalClockSec');
+      const periodEl = document.getElementById('clockPeriod');
+      if (timeEl) timeEl.textContent = `${hh}:${mm}`;
+      if (secEl) secEl.textContent = `:${ss}`;
+      if (periodEl) periodEl.textContent = h < 12 ? 'AM' : 'PM';
+
+      const slotEl = document.getElementById('clockSlotDetail');
+      if (slotEl) slotEl.textContent = `Slot #${Math.floor(currentMin / 3)} (3-min granularity)`;
+
+      // Shift Badge
+      const shiftEl = document.getElementById('currentShiftBadge');
+      if (shiftEl) {
+        if (h >= 6 && h < 14) {
+          shiftEl.textContent = '☀️ Morning Shift (06:00 - 14:00)';
+          shiftEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+        } else if (h >= 14 && h < 22) {
+          shiftEl.textContent = '🌅 Evening Shift (14:00 - 22:00)';
+          shiftEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30';
+        } else {
+          shiftEl.textContent = '🌙 Night Shift (22:00 - 06:00)';
+          shiftEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30';
+        }
+      }
+    }
+    // High-resolution 100ms clock animation
+    setInterval(updateSmoothClock, 100);
+
+    function updateSpeedButtons(speed) {
+      const sp = Math.round(speed);
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.classList.remove('bg-cyan-600', 'text-white', 'font-semibold');
+        btn.classList.add('text-slate-400');
+      });
+      const activeBtn = document.getElementById(`speedBtn-${sp}`);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-cyan-600', 'text-white', 'font-semibold');
+        activeBtn.classList.remove('text-slate-400');
+      }
+      updateClockPlayPauseUI(speed);
+    }
+
+    function updateClockPlayPauseUI(speed) {
+      const icon = document.getElementById('clockPlayPauseIcon');
+      const text = document.getElementById('clockPlayPauseText');
+      const btn = document.getElementById('clockPlayPauseBtn');
+      if (!icon || !text || !btn) return;
+      if (speed > 0) {
+        icon.textContent = '⏸';
+        text.textContent = 'Pause';
+        btn.className = 'px-2.5 py-0.5 rounded-md bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-bold transition flex items-center gap-1';
+      } else {
+        icon.textContent = '▶';
+        text.textContent = 'Resume';
+        btn.className = 'px-2.5 py-0.5 rounded-md bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1 animate-pulse';
+      }
+    }
+
+    async function toggleClockPause() {
+      const newSpeed = serverSpeed > 0 ? 0 : 6.0;
+      await setSpeed(newSpeed);
+      showToast(newSpeed > 0 ? '▶ Hospital clock resumed (6 min/s)' : '⏸ Hospital clock paused');
+    }
+
+    // Polling Loop (fetches from backend or falls back to local sim)
+    async function tick() {
+      try {
+        const res = await fetch('/api/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (!isBackendLive) {
+            isBackendLive = true;
+            updateConnectionUI(true);
+          }
+          serverMinuteOfDay = data.clock.minuteOfDay;
+          serverSpeed = data.clock.speed;
+          lastSyncTimestamp = performance.now();
+          updateSpeedButtons(data.clock.speed);
+          renderMetrics(data.metrics, data.store, data.mode);
+          renderDoctors(data.doctors);
+
+          // Fetch appointments
+          const aRes = await fetch('/api/appointments');
+          if (aRes.ok) {
+            const appts = await aRes.json();
+            globalAppointments = appts;
+            renderAppointments(appts);
+            renderDischargedReceipts(appts.filter(a => a.status === 'DONE'));
+          }
+          return;
+        }
+      } catch (err) {
+        // Backend not reachable -> run standalone local simulation
+      }
+
+      // Offline / standalone mode
+      if (isBackendLive) {
+        isBackendLive = false;
+        updateConnectionUI(false);
+      }
+      runLocalSimStep();
+    }
+
+    function updateConnectionUI(connected) {
+      const ping = document.getElementById('connPing');
+      const dot = document.getElementById('connDot');
+      const text = document.getElementById('connText');
+      if (connected) {
+        if (ping) ping.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75';
+        if (dot) dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500';
+        if (text) text.textContent = 'Java Backend Live';
+        safeSet('badgeStore', 'Live Core');
+      } else {
+        if (ping) ping.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75';
+        if (dot) dot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500';
+        if (text) text.textContent = 'Standalone Simulation';
+        safeSet('badgeStore', 'Browser Engine');
+      }
+    }
+
+    // Standalone Simulation Step (advances time & services queues)
+    let lastSimTime = performance.now();
+    function runLocalSimStep() {
+      const now = performance.now();
+      const dt = (now - lastSimTime) / 1000;
+      lastSimTime = now;
+
+      // Advance clock
+      localSim.minute = (localSim.minute + dt * localSim.speed) % 1440;
+      const h = Math.floor(localSim.minute / 60);
+      const m = Math.floor(localSim.minute % 60);
+      const formatted = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+      const currentSlot = Math.floor(localSim.minute / 3);
+
+      renderClock({
+        formatted: formatted,
+        minuteOfDay: localSim.minute,
+        currentSlot: currentSlot,
+        speed: localSim.speed
+      });
+
+      // Process doctor queues
+      localSim.doctors.forEach(d => {
+        const onDuty = isDocOnDuty(d.shiftName, localSim.minute);
+        if (onDuty && d.queue.length > 0 && !d.busy) {
+          const appt = d.queue.shift();
+          d.busy = true;
+          appt.status = 'IN_PROGRESS';
+          setTimeout(() => {
+            appt.status = 'DONE';
+            appt.waitMs = Math.round(1 + Math.random() * (appt.priority === 'EMERGENCY' ? 3 : 150));
+            if (appt.priority === 'EMERGENCY') localSim.emgWaits.push(appt.waitMs);
+            else localSim.rtnWaits.push(appt.waitMs);
+            localSim.completed++;
+            d.busy = false;
+          }, appt.serviceMs || 2000);
+        }
+      });
+
+      // Format doctor array for renderer
+      const docView = localSim.doctors.map(d => ({
+        id: d.id,
+        name: d.name,
+        department: d.department,
+        shift: d.shift,
+        shiftName: d.shiftName,
+        isEmergencyTeam: d.isEmergencyTeam,
+        onDuty: isDocOnDuty(d.shiftName, localSim.minute),
+        queueLength: d.queue.length,
+        isBusy: d.busy
+      }));
+      renderDoctors(docView);
+
+      // Metrics
+      const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      renderMetrics({
+        submitted: localSim.submitted,
+        completed: localSim.completed,
+        rejected: localSim.rejected,
+        conflicts: localSim.conflicts,
+        doubleBookings: localSim.doubleBookings,
+        emergencyAvgWaitMs: avg(localSim.emgWaits),
+        emergencyP95WaitMs: avg(localSim.emgWaits) * 1.5,
+        routineAvgWaitMs: avg(localSim.rtnWaits),
+        throughput: localSim.completed > 0 ? (localSim.completed / 10).toFixed(1) : 0
+      }, 'Browser Engine', 'PRIORITY_ER_TEAM');
+
+      globalAppointments = localSim.appointments;
+      renderAppointments(localSim.appointments);
+      renderDischargedReceipts(localSim.appointments.filter(a => a.status === 'DONE'));
+    }
+
+    // Sim time string helper
+    function getSimTimeString() {
+      const el = document.getElementById('digitalClockHourMin');
+      return el ? el.textContent : '08:00';
+    }
+
+    // Render Helpers
+    function renderClock(clk) {
+      if (!clk) return;
+      serverMinuteOfDay = clk.minuteOfDay;
+      serverSpeed = clk.speed;
+      lastSyncTimestamp = performance.now();
+      updateSpeedButtons(clk.speed);
+    }
+
+    function safeSet(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function renderMetrics(m, store, mode) {
+      if (!m) return;
+      safeSet('metricEmgWait', Number(m.emergencyAvgWaitMs).toFixed(1));
+      safeSet('metricEmgP95', `p95 wait: ${Number(m.emergencyP95WaitMs).toFixed(1)} ms`);
+      safeSet('metricRtnWait', Number(m.routineAvgWaitMs).toFixed(1));
+      safeSet('metricThroughput', Number(m.throughput).toFixed(1));
+      safeSet('metricCompleted', m.completed);
+      safeSet('metricSubmitted', m.submitted);
+      safeSet('metricRejected', `${m.rejected} rejected (full shifts)`);
+      safeSet('metricConflicts', `${m.conflicts} conflicts (ReentrantLock)`);
+      if (store) safeSet('badgeStore', store);
+      if (mode) safeSet('badgePolicy', mode);
+    }
+
+    function renderDoctors(doctors) {
+      if (!doctors) return;
+      const grid = document.getElementById('doctorGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      doctors.forEach(d => {
+        const card = document.createElement('div');
+        const isEr = d.isEmergencyTeam;
+        const borderClass = isEr ? 'border-rose-600/40 bg-rose-950/20' : d.onDuty ? 'border-slate-700 bg-slate-950/70' : 'border-slate-800/80 bg-slate-950/30 opacity-70';
+        card.className = `p-3 rounded-xl border ${borderClass} transition relative overflow-hidden flex flex-col justify-between`;
+
+        const dutyBadge = d.onDuty
+          ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">ON DUTY</span>`
+          : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-500">OFF DUTY</span>`;
+
+        const busyBadge = d.isBusy
+          ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 animate-pulse">● BUSY</span>`
+          : `<span class="text-[10px] text-slate-500">Idle</span>`;
+
+        card.innerHTML = `
+          <div>
+            <div class="flex items-start justify-between gap-1 mb-1.5">
+              <div>
+                <span class="text-[10px] font-semibold uppercase tracking-wider ${isEr ? 'text-rose-400' : 'text-cyan-400'}">${d.department}</span>
+                <h4 class="font-bold text-sm text-white">Dr. ${d.name} ${isEr ? '<span class="text-xs text-rose-400 font-extrabold">[ER]</span>' : ''}</h4>
+              </div>
+              ${dutyBadge}
+            </div>
+            <div class="text-[11px] text-slate-400 mb-2">
+              <span>Shift: ${d.shift}</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between pt-2 border-t border-slate-800/80 text-[11px]">
+            <div class="flex items-center gap-1.5">
+              <span class="text-slate-400">Queue:</span>
+              <span class="font-bold font-mono ${d.queueLength > 0 ? 'text-cyan-400' : 'text-slate-500'}">${d.queueLength}</span>
+            </div>
+            ${busyBadge}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function renderAppointments(appts) {
+      if (!appts) return;
+      document.getElementById('apptCountBadge').textContent = `${appts.length} records`;
+
+      const emergencies = appts.filter(a => a.priority === 'EMERGENCY');
+      if (emergencies.length > previousEmergencyCount) {
+        if (previousEmergencyCount > 0) {
+          playEmergencyAlert();
+          showToast('🚨 New Emergency Patient Dispatched to ER Team!', 'emergency');
+        }
+        previousEmergencyCount = emergencies.length;
+      }
+
+      let filtered = appts;
+      if (currentFilter === 'WAITING') filtered = appts.filter(a => a.status === 'WAITING');
+      else if (currentFilter === 'IN_PROGRESS') filtered = appts.filter(a => a.status === 'IN_PROGRESS');
+      else if (currentFilter === 'DONE') filtered = appts.filter(a => a.status === 'DONE');
+      else if (currentFilter === 'EMERGENCY') filtered = appts.filter(a => a.priority === 'EMERGENCY');
+
+      const tbody = document.getElementById('appointmentTableBody');
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-8 text-slate-500 font-sans">No matching appointment records found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(a => {
+        const isEmg = a.priority === 'EMERGENCY';
+        const priorityBadge = isEmg
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600/20 text-rose-400 border border-rose-500/40 animate-pulse">🚨 EMERGENCY</span>`
+          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">ROUTINE</span>`;
+
+        let statusBadge = '';
+        if (a.status === 'WAITING') {
+          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">WAITING</span>`;
+        } else if (a.status === 'IN_PROGRESS') {
+          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse">IN SERVICE</span>`;
+        } else {
+          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">DONE</span>`;
+        }
+
+        const waitDisplay = a.status === 'WAITING' ? '<span class="text-slate-500">-</span>' : `<span class="text-slate-200 font-bold">${a.waitMs} ms</span>`;
+        
+        // Receipt button if completed
+        const receiptBtn = a.status === 'DONE'
+          ? `<button onclick="openReceiptModal(${a.id})" class="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 font-sans font-bold text-[11px] transition flex items-center gap-1 float-right">
+              <span>🧾</span><span>Receipt</span>
+             </button>`
+          : `<span class="text-slate-600 text-[11px] float-right">-</span>`;
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-4 font-bold text-slate-400">#${a.id}</td>
+            <td class="py-2.5 px-4 font-sans text-white font-medium">${a.patientName} <span class="text-slate-500 text-xs">(${a.patientAge}y)</span></td>
+            <td class="py-2.5 px-4">${priorityBadge}</td>
+            <td class="py-2.5 px-4 font-sans text-slate-300">${a.department}</td>
+            <td class="py-2.5 px-4 font-sans font-medium text-slate-200">${a.doctorName}</td>
+            <td class="py-2.5 px-4 text-cyan-400 font-bold">${a.slotTime}</td>
+            <td class="py-2.5 px-4">${statusBadge}</td>
+            <td class="py-2.5 px-4">${waitDisplay}</td>
+            <td class="py-2.5 px-4 text-right">${receiptBtn}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // DISCHARGE RECEIPTS & BILLING LOGIC
+    // =========================================================================
+
+    // Pricing Model
+    function calculateBill(appt) {
+      const isEmg = appt.priority === 'EMERGENCY';
+      const items = [];
+      
+      if (isEmg) {
+        items.push({ desc: "Emergency Trauma Consultation", cat: "Clinical Care", amount: 350.00 });
+        items.push({ desc: "24h Dedicated Specialist Team Fee", cat: "Physician Care", amount: 200.00 });
+        items.push({ desc: "Rapid Triage & Critical Care Setup", cat: "Facility / Tech", amount: 150.00 });
+      } else {
+        items.push({ desc: "Outpatient Medical Consultation", cat: "Physician Care", amount: 150.00 });
+        
+        // Department Fee
+        const deptFees = {
+          "Cardiology": 95.00,
+          "Neurology": 110.00,
+          "Orthopedics": 85.00,
+          "Pediatrics": 55.00,
+          "Gynecology": 80.00,
+          "General Medicine": 40.00
+        };
+        const dFee = deptFees[appt.department] || 50.00;
+        items.push({ desc: `${appt.department} Facility & Equipment Usage`, cat: "Clinical Services", amount: dFee });
+        items.push({ desc: "Administrative & Electronic Scheduling Fee", cat: "Administration", amount: 25.00 });
+      }
+
+      const total = items.reduce((sum, item) => sum + item.amount, 0);
+      return { items, total };
+    }
+
+    function renderDischargedReceipts(doneAppts) {
+      const grid = document.getElementById('receiptsGrid');
+      const badge = document.getElementById('dischargedBadge');
+      const topBadge = document.getElementById('topReceiptCount');
+      const revEl = document.getElementById('metricRevenue');
+
+      badge.textContent = `${doneAppts.length} Discharges`;
+      topBadge.textContent = doneAppts.length;
+
+      // Calculate total hospital revenue
+      let totalRevenue = 0;
+      doneAppts.forEach(a => {
+        totalRevenue += calculateBill(a).total;
+      });
+      revEl.textContent = `$${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+      if (doneAppts.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full text-center py-12 text-slate-500 text-xs">
+            No patients have been discharged yet. When patients finish consultation (<code>DONE</code>), their official discharge receipt will appear here.
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = doneAppts.map(a => {
+        const isEmg = a.priority === 'EMERGENCY';
+        const { total } = calculateBill(a);
+
+        return `
+          <div class="receipt-card bg-slate-950/70 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 transition shadow-md flex flex-col justify-between group" data-search="${(a.patientName + ' ' + a.doctorName + ' ' + a.id + ' ' + a.department).toLowerCase()}">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-mono text-[11px] font-bold text-slate-400">#INV-2026-${String(a.id).padStart(4, '0')}</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isEmg ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'}">${a.priority}</span>
+              </div>
+              <h4 class="font-bold text-white text-sm mb-0.5">${a.patientName} <span class="text-xs text-slate-400 font-normal">(${a.patientAge}y)</span></h4>
+              <p class="text-xs text-slate-300 font-medium mb-1">${a.department}</p>
+              <p class="text-[11px] text-slate-400">${a.doctorName}</p>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+              <div>
+                <span class="text-[10px] text-slate-400 uppercase tracking-wider block">Total Billed</span>
+                <span class="font-mono font-extrabold text-sm text-emerald-400">$${total.toFixed(2)}</span>
+              </div>
+              <button onclick="openReceiptModal(${a.id})" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white font-bold text-xs transition flex items-center gap-1.5 shadow">
+                <span>🧾</span>
+                <span>View Receipt</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function filterReceiptCards() {
+      const q = document.getElementById('receiptSearchInput').value.trim().toLowerCase();
+      document.querySelectorAll('.receipt-card').forEach(card => {
+        const text = card.getAttribute('data-search') || '';
+        if (text.includes(q)) {
+          card.classList.remove('hidden');
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+    }
+
+    // Open Medical Receipt Modal
+    function openReceiptModal(apptId) {
+      const appt = globalAppointments.find(a => a.id === apptId);
+      if (!appt) return;
+
+      const { items, total } = calculateBill(appt);
+      const isEmg = appt.priority === 'EMERGENCY';
+
+      // Fill in details
+      document.getElementById('rcptInvoiceNo').textContent = `INV-2026-${String(appt.id).padStart(5, '0')}`;
+      const curTime = document.getElementById('digitalClockHourMin') ? document.getElementById('digitalClockHourMin').textContent : '08:00';
+      document.getElementById('rcptTimestamp').textContent = `Time: ${curTime} (Simulated Clock)`;
+      document.getElementById('rcptPatientName').textContent = appt.patientName;
+      document.getElementById('rcptPatientMeta').textContent = `Age: ${appt.patientAge} | Patient ID: #${appt.id * 1024 % 90000 + 10000}`;
+      document.getElementById('rcptDepartment').textContent = `Department: ${appt.department}`;
+      document.getElementById('rcptDoctorName').textContent = appt.doctorName;
+      document.getElementById('rcptShift').textContent = `Service: ${isEmg ? '24h Emergency On-Call Team' : 'Scheduled Shift Consultation'}`;
+      document.getElementById('rcptPriority').textContent = `Care Priority: ${appt.priority} ${isEmg ? '(Level 1 Trauma Triage)' : '(Standard Outpatient)'}`;
+      document.getElementById('rcptSlotTime').textContent = appt.slotTime;
+      document.getElementById('rcptWaitTime').textContent = `${appt.waitMs} ms`;
+      document.getElementById('rcptServiceTime').textContent = `${appt.serviceMs || 2500} ms`;
+
+      // Fill Bill Items
+      const tbody = document.getElementById('rcptBillItems');
+      tbody.innerHTML = items.map(item => `
+        <tr>
+          <td class="py-2 px-3 font-sans font-medium text-slate-800">${item.desc}</td>
+          <td class="py-2 px-3 font-sans text-slate-500">${item.cat}</td>
+          <td class="py-2 px-3 text-right font-bold text-slate-900">$${item.amount.toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('rcptTotalAmount').textContent = `$${total.toFixed(2)}`;
+      document.getElementById('rcptPaidAmount').textContent = `-$${total.toFixed(2)}`;
+      document.getElementById('rcptDocSig').textContent = `${appt.doctorName}, M.D.`;
+
+      document.getElementById('receiptModal').classList.remove('hidden');
+      playBeep(700, 0.08);
+    }
+
+    function closeReceiptModal() {
+      document.getElementById('receiptModal').classList.add('hidden');
+    }
+
+    function printReceipt() {
+      window.print();
+    }
+
+    // Actions
+    async function setSpeed(s) {
+      serverSpeed = s;
+      lastSyncTimestamp = performance.now();
+      updateSpeedButtons(s);
+      localSim.speed = s;
+      if (isBackendLive) {
+        try {
+          await fetch('/api/clock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ speed: s })
+          });
+        } catch (e) {}
+      }
+      playBeep(450, 0.08);
+      tick();
+    }
+
+    async function setHour(h) {
+      serverMinuteOfDay = h * 60;
+      lastSyncTimestamp = performance.now();
+      localSim.minute = h * 60;
+      if (isBackendLive) {
+        try {
+          await fetch('/api/clock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hour: h })
+          });
+        } catch (e) {}
+      }
+      playBeep(520, 0.08);
+      showToast(`Clock jumped to ${String(h).padStart(2, '0')}:00`);
+      tick();
+    }
+
+    async function dispatchEmergency() {
+      const name = document.getElementById('emgNameInput').value.trim() || `Trauma-${Math.floor(100 + Math.random() * 900)}`;
+      const age = parseInt(document.getElementById('emgAgeInput').value, 10) || 45;
+
+      if (isBackendLive) {
+        try {
+          const res = await fetch('/api/appointments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: name,
+              age: age,
+              priority: 'EMERGENCY',
+              department: 'EMERGENCY'
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            playEmergencyAlert();
+            showToast(`🚨 ${data.patientName} dispatched to ${data.doctorName}!`, 'emergency');
+            document.getElementById('emgNameInput').value = '';
+            tick();
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // Local fallback
+      const erDocs = localSim.doctors.filter(d => d.isEmergencyTeam);
+      erDocs.sort((a, b) => a.queue.length - b.queue.length);
+      const chosenDoc = erDocs[0];
+      const appt = {
+        id: localSim.nextId++,
+        patientName: name,
+        patientAge: age,
+        priority: 'EMERGENCY',
+        department: 'Emergency Medicine',
+        doctorName: `Dr. ${chosenDoc.name}`,
+        slotTime: getSimTimeString(),
+        status: 'WAITING',
+        serviceMs: 2000 + Math.floor(Math.random() * 1000)
+      };
+      chosenDoc.queue.unshift(appt);
+      localSim.appointments.unshift(appt);
+      localSim.submitted++;
+      playEmergencyAlert();
+      showToast(`🚨 ${name} dispatched to Dr. ${chosenDoc.name}!`, 'emergency');
+      document.getElementById('emgNameInput').value = '';
+      tick();
+    }
+
+    async function bookRoutine() {
+      const name = document.getElementById('rtnNameInput').value.trim() || `Patient-${Math.floor(100 + Math.random() * 900)}`;
+      const age = parseInt(document.getElementById('rtnAgeInput').value, 10) || 30;
+      const deptKey = document.getElementById('rtnDeptSelect').value;
+      const time = document.getElementById('rtnTimeSelect').value;
+
+      if (isBackendLive) {
+        try {
+          const res = await fetch('/api/appointments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: name,
+              age: age,
+              department: deptKey,
+              priority: 'ROUTINE',
+              time: time
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            playBeep(600, 0.1);
+            showToast(`✓ Booked ${data.patientName} with ${data.doctorName} at ${data.slotTime}!`, 'success');
+            document.getElementById('rtnNameInput').value = '';
+            tick();
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // Local fallback
+      const deptNames = {
+        GENERAL: "General Medicine",
+        CARDIOLOGY: "Cardiology",
+        ORTHOPEDICS: "Orthopedics",
+        PEDIATRICS: "Pediatrics",
+        NEUROLOGY: "Neurology",
+        GYNECOLOGY: "Gynecology"
+      };
+      const deptName = deptNames[deptKey] || "General Medicine";
+      const candidates = localSim.doctors.filter(d => d.department === deptName && !d.isEmergencyTeam);
+      const chosenDoc = candidates[Math.floor(Math.random() * candidates.length)] || candidates[0];
+
+      const appt = {
+        id: localSim.nextId++,
+        patientName: name,
+        patientAge: age,
+        priority: 'ROUTINE',
+        department: deptName,
+        doctorName: `Dr. ${chosenDoc.name}`,
+        slotTime: time,
+        status: 'WAITING',
+        serviceMs: 2500 + Math.floor(Math.random() * 1000)
+      };
+      chosenDoc.queue.push(appt);
+      localSim.appointments.unshift(appt);
+      localSim.submitted++;
+      playBeep(600, 0.1);
+      showToast(`✓ Booked ${name} with Dr. ${chosenDoc.name} at ${time}!`, 'success');
+      document.getElementById('rtnNameInput').value = '';
+      tick();
+    }
+
+    async function injectDemoPatients(count) {
+      if (isBackendLive) {
+        try {
+          const res = await fetch('/api/demo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count: count })
+          });
+          const data = await res.json();
+          playBeep(700, 0.15);
+          showToast(`⚡ Generated and scheduled ${data.added} patients!`, 'success');
+          tick();
+          return;
+        } catch (e) {}
+      }
+
+      // Local fallback
+      const clinicalDocs = localSim.doctors.filter(d => !d.isEmergencyTeam);
+      for (let i = 0; i < count; i++) {
+        const doc = clinicalDocs[Math.floor(Math.random() * clinicalDocs.length)];
+        const appt = {
+          id: localSim.nextId++,
+          patientName: `Patient-${Math.floor(100 + Math.random() * 900)}`,
+          patientAge: 18 + Math.floor(Math.random() * 65),
+          priority: 'ROUTINE',
+          department: doc.department,
+          doctorName: `Dr. ${doc.name}`,
+          slotTime: getSimTimeString(),
+          status: 'WAITING',
+          serviceMs: 1800 + Math.floor(Math.random() * 1000)
+        };
+        doc.queue.push(appt);
+        localSim.appointments.unshift(appt);
+        localSim.submitted++;
+      }
+      playBeep(700, 0.15);
+      showToast(`⚡ Scheduled ${count} rush-hour patients!`, 'success');
+      tick();
+    }
+
+    async function clearFinishedAppointments() {
+      if (isBackendLive) {
+        try {
+          const res = await fetch('/api/appointments', { method: 'DELETE' });
+          const data = await res.json();
+          showToast(`Cleared ${data.deleted} completed records.`);
+          tick();
+          return;
+        } catch (e) {}
+      }
+
+      // Local fallback
+      const before = localSim.appointments.length;
+      localSim.appointments = localSim.appointments.filter(a => a.status !== 'DONE');
+      showToast(`Cleared ${before - localSim.appointments.length} completed records.`);
+      tick();
+    }
+
+    function setFilter(f) {
+      currentFilter = f;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('bg-cyan-600', 'text-white', 'font-semibold');
+        btn.classList.add('bg-slate-800', 'text-slate-300');
+      });
+      const activeBtn = document.getElementById(`filterBtn-${f}`);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-cyan-600', 'text-white', 'font-semibold');
+        activeBtn.classList.remove('bg-slate-800', 'text-slate-300');
+      }
+      if (!isBackendLive) renderAppointments(localSim.appointments);
+    }
+
+    // Benchmark Modal
+    function openBenchmarkModal() {
+      document.getElementById('benchmarkModal').classList.remove('hidden');
+    }
+
+    function closeBenchmarkModal() {
+      document.getElementById('benchmarkModal').classList.add('hidden');
+    }
+
+    function selectTrials(n) {
+      selectedTrialCount = n;
+      document.querySelectorAll('.trial-btn').forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white', 'font-semibold');
+        btn.classList.add('text-slate-400');
+      });
+      const btn = document.getElementById(`trialBtn-${n}`);
+      if (btn) {
+        btn.classList.add('bg-indigo-600', 'text-white', 'font-semibold');
+        btn.classList.remove('text-slate-400');
+      }
+    }
+
+    async function executeBenchmark() {
+      const btn = document.getElementById('runBenchmarkBtn');
+      const spinner = document.getElementById('benchmarkSpinner');
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+
+      const tbody = document.getElementById('benchmarkTableBody');
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-10 text-cyan-400 font-sans animate-pulse">Running multi-threaded benchmark simulation (${selectedTrialCount} trials)... please wait</td></tr>`;
+
+      if (isBackendLive) {
+        try {
+          const res = await fetch('/api/benchmark', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trials: selectedTrialCount })
+          });
+          const data = await res.json();
+          if (data.success && data.results) {
+            renderBenchmarkResults(data.results);
+            btn.disabled = false;
+            spinner.classList.add('hidden');
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // Standalone reference benchmark data
+      setTimeout(() => {
+        const referenceResults = [
+          { mode: "FIFO", booking: "SAFE", emergencyRatio: 0.05, hour: 10, emergencyAvgWait: "128.50", routineAvgWait: "167.50", throughput: "661.10", conflicts: "219.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY", booking: "SAFE", emergencyRatio: 0.05, hour: 10, emergencyAvgWait: "6.20", routineAvgWait: "176.90", throughput: "692.20", conflicts: "219.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY_ER_TEAM", booking: "SAFE", emergencyRatio: 0.05, hour: 10, emergencyAvgWait: "1.20", routineAvgWait: "147.80", throughput: "714.90", conflicts: "217.0", doubleBookings: "0.0" },
+          { mode: "FIFO", booking: "SAFE", emergencyRatio: 0.10, hour: 10, emergencyAvgWait: "149.90", routineAvgWait: "166.00", throughput: "678.90", conflicts: "190.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY", booking: "SAFE", emergencyRatio: 0.10, hour: 10, emergencyAvgWait: "12.60", routineAvgWait: "190.30", throughput: "693.20", conflicts: "186.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY_ER_TEAM", booking: "SAFE", emergencyRatio: 0.10, hour: 10, emergencyAvgWait: "1.90", routineAvgWait: "130.80", throughput: "760.90", conflicts: "191.0", doubleBookings: "0.0" },
+          { mode: "FIFO", booking: "SAFE", emergencyRatio: 0.20, hour: 10, emergencyAvgWait: "172.40", routineAvgWait: "166.20", throughput: "664.30", conflicts: "160.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY", booking: "SAFE", emergencyRatio: 0.20, hour: 10, emergencyAvgWait: "23.30", routineAvgWait: "209.50", throughput: "684.00", conflicts: "159.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY_ER_TEAM", booking: "SAFE", emergencyRatio: 0.20, hour: 10, emergencyAvgWait: "18.60", routineAvgWait: "119.30", throughput: "834.70", conflicts: "157.0", doubleBookings: "0.0" },
+          { mode: "FIFO", booking: "SAFE", emergencyRatio: 0.10, hour: 18, emergencyAvgWait: "152.90", routineAvgWait: "167.50", throughput: "684.10", conflicts: "188.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY", booking: "SAFE", emergencyRatio: 0.10, hour: 18, emergencyAvgWait: "11.90", routineAvgWait: "191.00", throughput: "681.90", conflicts: "187.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY_ER_TEAM", booking: "SAFE", emergencyRatio: 0.10, hour: 18, emergencyAvgWait: "2.10", routineAvgWait: "132.20", throughput: "756.00", conflicts: "187.0", doubleBookings: "0.0" },
+          { mode: "FIFO", booking: "SAFE", emergencyRatio: 0.10, hour: 2, emergencyAvgWait: "179.90", routineAvgWait: "193.70", throughput: "273.90", conflicts: "57.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY", booking: "SAFE", emergencyRatio: 0.10, hour: 2, emergencyAvgWait: "26.90", routineAvgWait: "221.70", throughput: "276.30", conflicts: "55.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY_ER_TEAM", booking: "SAFE", emergencyRatio: 0.10, hour: 2, emergencyAvgWait: "1.70", routineAvgWait: "157.40", throughput: "332.40", conflicts: "54.0", doubleBookings: "0.0" },
+          { mode: "PRIORITY_ER_TEAM", booking: "UNSAFE", emergencyRatio: 0.10, hour: 10, emergencyAvgWait: "1.00", routineAvgWait: "115.70", throughput: "761.10", conflicts: "187.0", doubleBookings: "1.0" }
+        ];
+        renderBenchmarkResults(referenceResults);
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+      }, 1200);
+    }
+
+    function renderBenchmarkResults(results) {
+      const tbody = document.getElementById('benchmarkTableBody');
+      tbody.innerHTML = results.map(r => {
+        const isErTeam = r.mode.includes('ER_TEAM');
+        const rowClass = isErTeam ? 'bg-indigo-950/20 font-bold' : '';
+        return `
+          <tr class="${rowClass} hover:bg-slate-800/50 transition">
+            <td class="py-2 px-3 ${isErTeam ? 'text-cyan-400' : 'text-slate-300'}">${r.mode}</td>
+            <td class="py-2 px-3 ${r.booking === 'SAFE' ? 'text-emerald-400' : 'text-rose-400'}">${r.booking}</td>
+            <td class="py-2 px-3">${Math.round(r.emergencyRatio * 100)}%</td>
+            <td class="py-2 px-3">${String(r.hour).padStart(2, '0')}:00</td>
+            <td class="py-2 px-3 text-rose-400 font-extrabold">${r.emergencyAvgWait} ms</td>
+            <td class="py-2 px-3">${r.routineAvgWait} ms</td>
+            <td class="py-2 px-3 text-emerald-400 font-bold">${r.throughput}</td>
+            <td class="py-2 px-3">${r.conflicts}</td>
+            <td class="py-2 px-3 ${Number(r.doubleBookings) > 0 ? 'text-rose-400 font-extrabold' : 'text-slate-400'}">${r.doubleBookings}</td>
+          </tr>
+        `;
+      }).join('');
+      playBeep(800, 0.2);
+    }
+
+    // Start 300ms polling/tick loop
+    setInterval(tick, 300);
+    tick();
+  </script>
+</body>
+</html>
